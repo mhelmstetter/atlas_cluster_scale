@@ -1,6 +1,16 @@
 # atlas_cluster_scale
 Custom cluster tier scaler for MongoDB Atlas
 
+## Configuration
+1. Clone or download the repository
+```
+git clone https://github.com/mhelmstetter/atlas_cluster_scale.git
+```
+2. Install dependencies
+```
+pip3 install requests
+```
+
 ## Launch the Binary
 
 To see all options: 
