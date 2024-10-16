@@ -24,7 +24,7 @@ def getClusterConfig():
     return json_data
 
 def printClusterConfig():
-
+    print("#### print")
     json_data = getClusterConfig()
     region0 = ['replicationSpecs', 0, 'regionConfigs', 0]
     autoScalingCompute = region0 + ["autoScaling", "compute"]
@@ -40,6 +40,7 @@ def printClusterConfig():
 
 
 def scaleDown():
+    print(f"#### scaleDown to tier {args.clusterTier}")
     json_data = getClusterConfig()
     regions = get_value_by_path(json_data, ['replicationSpecs', 0, 'regionConfigs'])
     for index in range(len(regions)):
@@ -50,15 +51,17 @@ def scaleDown():
         electableSpecsTier = region0 + ["electableSpecs", "instanceSize"]
         readOnlySpecsTier = region0 + ["readOnlySpecs", "instanceSize"]
 
-        #autoScalingMinPrevTier = get_previous_tier(args.autoScalingMinTier)
-        #print("*** autoScalingMinPrevTier: " + str(autoScalingMinPrevTier))
+        #autoScalingMinPrevTier = get_previous_tier(args.clusterTier)
+        #print("*** autoScalingMinPrevTier: {autoScalingMinPrevTier}")
 
         electablePrevTier = get_previous_tier(get_value_by_path(json_data, electableSpecsTier))
         readOnlyPrevTier = get_previous_tier(get_value_by_path(json_data, readOnlySpecsTier))
+        print(f"*** electablePrevTier: {electablePrevTier}")
+        print(f"*** readOnlyPrevTier: {readOnlyPrevTier}")
 
-        replace_or_remove_by_path(json_data, autoScalingCompute + ["minInstanceSize"], args.clusterTier)
+        #replace_or_remove_by_path(json_data, autoScalingCompute + ["minInstanceSize"], args.clusterTier)
         #replace_or_remove_by_path(json_data, autoScalingCompute + ["maxInstanceSize"], "M40")
-        replace_or_remove_by_path(json_data, autoScalingCompute + ["scaleDownEnabled"], True)
+        #replace_or_remove_by_path(json_data, autoScalingCompute + ["scaleDownEnabled"], True)
         replace_or_remove_by_path(json_data, electableSpecsTier, electablePrevTier)
         replace_or_remove_by_path(json_data, readOnlySpecsTier, readOnlyPrevTier)
 
@@ -70,10 +73,11 @@ def scaleDown():
         return
 
     response = requests.patch(apiEndpoint,
-                    auth=HTTPDigestAuth(args.username,args.apiKey),
-                    verify=False,
-                    data=json_data,
-                    headers=header1)
+                          auth=HTTPDigestAuth(args.username, args.apiKey),
+                          verify=True,
+                          data=configsStr,  # Add json.dumps here
+                          headers=header1)
+
     if response.status_code != 200:
         print(f"Error Status Code: {response.status_code}")
         print(f"Response Reason: {response.reason}")
@@ -88,6 +92,7 @@ def scaleDown():
     print("Scale down complete: " + json.dumps(response.json()))
 
 def scaleUp():
+    print("#### scaleUp")
     json_data = getClusterConfig()
     regions = get_value_by_path(json_data, ['replicationSpecs', 0, 'regionConfigs'])
     for index in range(len(regions)):
@@ -101,6 +106,7 @@ def scaleUp():
         #   - BASE_INSTANCE_SIZE_MUST_MATCH, Electable and read-only nodes must all have the same instance size.
         replace_or_remove_by_path(json_data, autoScalingCompute + ["minInstanceSize"], remove=True)
         #replace_or_remove_by_path(json_data, autoScalingCompute + ["maxInstanceSize"], "M40")
+        replace_or_remove_by_path(json_data, autoScalingCompute + ["enabled"], True)
         replace_or_remove_by_path(json_data, autoScalingCompute + ["scaleDownEnabled"], False)
         replace_or_remove_by_path(json_data, electableSpecsSize, args.clusterTier)
         replace_or_remove_by_path(json_data, readOnlySpecsSize, args.clusterTier)
@@ -214,42 +220,31 @@ def replace_or_remove_by_path(json_data, path, new_value=None, remove=False):
 
 requests.packages.urllib3.disable_warnings()
 
-parser = argparse.ArgumentParser(description="Manage alerts from MongoDB Ops/Cloud Manager")
+parser = argparse.ArgumentParser(description="MongoDB custom Atlas scaling utility")
 
 # Add global arguments that are common across all subcommands
 parser.add_argument("--projectId", help="The Atlas project id", required=True)
 parser.add_argument("--username", help="Atlas user name", required=True)
 parser.add_argument("--apiKey", help="Atlas API key for the user", required=True)
 parser.add_argument("--clusterName", help="Atlas Cluster name", required=True)
-
-# Create subparsers for different actions
-subparsers = parser.add_subparsers(dest="command", help="Available actions")
-
-# Subparser for the 'printClusterConfig' action
-print_config_parser = subparsers.add_parser('printClusterConfig', help="Print cluster configurations")
-print_config_parser.set_defaults(func=printClusterConfig)
-
-# Subparser for the 'scaleDown' action
-scale_down_parser = subparsers.add_parser('scaleDown', help="Scale down cluster configuration")
-scale_down_parser.add_argument("--clusterTier", help="Auto-scale minimum cluster size", required=True)
-scale_down_parser.set_defaults(func=scaleDown)
-
-# Subparser for the 'scaleUp' action
-scale_up_parser = subparsers.add_parser('scaleUp', help="Scale up cluster configuration")
-scale_up_parser.add_argument("--clusterTier", help="Auto-scale maximum cluster size", required=True)
-scale_up_parser.set_defaults(func=scaleUp)
+parser.add_argument("--printClusterConfig", dest='action', action='store_const', const=printClusterConfig, help="Print cluster configurations", required=False)
+parser.add_argument("--scaleUp", dest='action', action='store_const', const=scaleUp, help="Scale up the cluster", required=False)
+parser.add_argument("--scaleDown", dest='action', action='store_const', const=scaleDown, help="Scale down the cluster", required=False)
+parser.add_argument("--clusterTier", help="Cluster tier to scale up/down to", required=False)
 
 # Global optional argument
 parser.add_argument("--dryRun", action="store_true", default=False, help="Dry run mode")
 
 args = parser.parse_args()
+if args.action is None:
+    parser.parse_args(['-h'])
+
+if args.action in [scaleUp, scaleDown] and args.clusterTier is None:
+    parser.error("--clusterTier is required for scaleUp and scaleDown")
+
 
 apiEndpoint = "https://cloud.mongodb.com/api/atlas/v2/groups/" + args.projectId +"/clusters/" + args.clusterName
 
-# Call the appropriate function based on the subcommand
-if args.command is None:
-    parser.print_help()
-else:
-    args.func()
+args.action()
 
 
