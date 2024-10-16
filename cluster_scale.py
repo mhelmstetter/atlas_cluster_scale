@@ -31,7 +31,10 @@ def printClusterConfig():
     electableSpecsSize = region0 + ["electableSpecs", "instanceSize"]
     readOnlySpecsSize = region0 + ["readOnlySpecs", "instanceSize"]
 
+    minInstanceSize = get_value_by_path(json_data, autoScalingCompute + ["minInstanceSize"]) 
+
     print("autoScalingCompute: " + json.dumps(get_value_by_path(json_data, autoScalingCompute)))
+    print(f"    minInstanceSize: {minInstanceSize}")
     print("electableSpecsSize: " + json.dumps(get_value_by_path(json_data, electableSpecsSize)))
     print("readOnlySpecsSize: " + json.dumps(get_value_by_path(json_data, readOnlySpecsSize)))
 
@@ -44,24 +47,20 @@ def scaleDown():
     json_data = getClusterConfig()
     regions = get_value_by_path(json_data, ['replicationSpecs', 0, 'regionConfigs'])
     for index in range(len(regions)):
-        #print("***************")
-        #print(json.dumps(region, indent=4))
         region0 = ['replicationSpecs', 0, 'regionConfigs', index]
         autoScalingCompute = region0 + ["autoScaling", "compute"]
         electableSpecsTier = region0 + ["electableSpecs", "instanceSize"]
         readOnlySpecsTier = region0 + ["readOnlySpecs", "instanceSize"]
 
-        #autoScalingMinPrevTier = get_previous_tier(args.clusterTier)
-        #print("*** autoScalingMinPrevTier: {autoScalingMinPrevTier}")
+        minInstanceSize = get_value_by_path(json_data, autoScalingCompute + ["minInstanceSize"]) 
 
         electablePrevTier = get_previous_tier(get_value_by_path(json_data, electableSpecsTier))
         readOnlyPrevTier = get_previous_tier(get_value_by_path(json_data, readOnlySpecsTier))
-        print(f"*** electablePrevTier: {electablePrevTier}")
-        print(f"*** readOnlyPrevTier: {readOnlyPrevTier}")
 
-        #replace_or_remove_by_path(json_data, autoScalingCompute + ["minInstanceSize"], args.clusterTier)
-        #replace_or_remove_by_path(json_data, autoScalingCompute + ["maxInstanceSize"], "M40")
-        #replace_or_remove_by_path(json_data, autoScalingCompute + ["scaleDownEnabled"], True)
+        if minInstanceSize is None or is_less_than(args.clusterTier, minInstanceSize):
+            replace_or_remove_by_path(json_data, autoScalingCompute + ["minInstanceSize"], args.clusterTier)
+        
+        replace_or_remove_by_path(json_data, autoScalingCompute + ["scaleDownEnabled"], True)
         replace_or_remove_by_path(json_data, electableSpecsTier, electablePrevTier)
         replace_or_remove_by_path(json_data, readOnlySpecsTier, readOnlyPrevTier)
 
@@ -92,7 +91,7 @@ def scaleDown():
     print("Scale down complete: " + json.dumps(response.json()))
 
 def scaleUp():
-    print("#### scaleUp")
+    print(f"#### scaleUp to tier {args.clusterTier}")
     json_data = getClusterConfig()
     regions = get_value_by_path(json_data, ['replicationSpecs', 0, 'regionConfigs'])
     for index in range(len(regions)):
@@ -129,6 +128,9 @@ def scaleUp():
 
     response.raise_for_status()
     print("Scale up complete: " + json.dumps(response.json()))
+
+def is_less_than(s1, s2):
+    return tiers.index(s1) < tiers.index(s2)
 
 def get_previous_tier(value):
     if value in tiers:
